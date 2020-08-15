@@ -17,9 +17,11 @@ enum {
     R_R6, 
     R_R7, 
     R_PC,       // program counter
-    R_COND,    // conditional flags
+    R_COND,     // conditional flags
     R_COUNT     // total registers = 10
 };
+
+uint16_t reg[R_COUNT];
 
 /*  opcodes  */
 enum {
@@ -38,7 +40,7 @@ enum {
     OP_JMP,     // jump
     OP_RES,     // reserved (unused)
     OP_LEA,     // load effective address
-    OP_TRAP    // execute trap
+    OP_TRAP     // execute trap
 };
 
 /*  condition flags  */
@@ -117,7 +119,7 @@ int main(int argc, const char* argv[]) {
 
         switch (op) {
             case OP_ADD:
-                /*  add implementation  */ {
+                /*  add  */ {
                     // '& 0x7' retains 3 rightmost digits
                     uint16_t DR = (instr >> 9) & 0x7;       // destination reg
                     uint16_t SR1 = (instr >> 6) & 0x7;      // first operand
@@ -135,13 +137,13 @@ int main(int argc, const char* argv[]) {
                 }
                 break;
             case OP_AND:
-                /*  and implementation  */ {
+                /*  and  */ {
                     uint16_t DR = (instr >> 9) & 0x7;
                     uint16_t SR1 = (instr >> 6) & 0x7;
                     uint16_t imm_flag = (instr >> 5) & 1;
 
                     if (imm_flag) {
-                        uint16_t imm5 = sign_extend(instr & 0x1F, 5)
+                        uint16_t imm5 = sign_extend(instr & 0x1F, 5);
                         reg[DR] = reg[SR1] & imm5;
                     } else {
                         uint16_t SR2 = instr & 0x7;
@@ -151,7 +153,7 @@ int main(int argc, const char* argv[]) {
                 }
                 break;
             case OP_NOT:
-                /*  not implementation  */ {
+                /*  not  */ {
                     uint16_t DR = (instr >> 9) & 0x7;
                     uint16_t SR = (instr >> 6) & 0x7;
 
@@ -160,7 +162,7 @@ int main(int argc, const char* argv[]) {
                 }
                 break;
             case OP_BR:
-                /*  branch implementation  */ {
+                /*  branch  */ {
                     uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
                     uint16_t cond_flag = (instr >> 9) & 0x7;
                     // checks if any condition is fulfilled (n,z,p)
@@ -170,10 +172,86 @@ int main(int argc, const char* argv[]) {
                 }
                 break;
             case OP_JMP:
-                /*  jump implementation  */ {
+                /*  jump  */ {
                     // unconditional jump to register specified (o/w to R_R7)
                     uint16_t BaseR = (instr >> 6) & 0x7;
                     reg[R_PC] = reg[BaseR];
+                }
+                break;
+            case OP_JSR:
+                /*  subroutine jump  */ {
+                    // save current PC into R7
+                    reg[R_R7] = reg[R_PC];
+
+                    uint16_t flag = (instr >> 11) & 1;
+
+                    if (flag) {
+                        uint16_t pc_offset = sign_extend(instr & 0x7FF, 11);
+                        reg[R_PC] += pc_offset;
+                    } else {
+                        uint16_t BaseR = (instr >> 6) & 0x7;
+                        reg[R_PC] = reg[BaseR];
+                    }
+                }
+                break;
+            case OP_LD:
+                /*  load  */ {
+                    uint16_t DR = (instr >> 9) & 0x7;
+                    uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                    reg[DR] = mem_read(reg[R_PC] + pc_offset);
+                    update_flags(DR);
+                }
+                break;
+            case OP_LDI:
+                /*  load indirect  */ {
+                    uint16_t DR = (instr >> 9) & 0x7;
+                    uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                    // offset is used as a pointer, not actual data address
+                    reg[DR] = mem_read(mem_read(reg[R_PC] = pc_offset));
+                    update_flags(DR);
+                }
+                break;
+            case OP_LDR:
+                /*  load register */ {
+                    uint16_t DR = (instr >> 9) & 0x7;
+                    uint16_t BaseR = (instr >> 6) & 0x7;
+                    uint16_t offset = sign_extend(instr & 0x3F, 6);
+                    reg[DR] = mem_read(reg[BaseR] + offset);
+                    update_flags(DR);
+                }
+                break;
+            case OP_LEA:
+                /*  load effective address */ {
+                    uint64_t DR = (instr >> 9) & 0x7;
+                    uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                    reg[DR] = reg[R_PC] + pc_offset;
+                    update_flags(DR);
+                }
+                break;
+            case OP_ST: 
+                /*  store  */ {
+                    uint16_t SR = (instr >> 9) & 0x7;
+                    uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                    mem_write(reg[R_PC] + pc_offset, SR);
+                }
+                break;
+            case OP_STI:
+                /*  store indirect  */ {
+                    uint16_t SR = (instr >> 9) & 0x7;
+                    uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                    mem_write(mem_read(reg[R_PC] + pc_offset), SR);
+                }
+                break;
+            case OP_STR:
+                /*  store register  */ {
+                    uint16_t SR = (instr >> 9) & 0x7;
+                    uint16_t BaseR = (instr >> 6) & 0x7;
+                    uint16_t offset = sign_extend(instr & 0x3F, 6);
+                    mem_write(reg[BaseR] + offset, SR);                }
+                break;
+            case OP_TRAP: 
+                /*  trap routines  */ {
+
                 }
                 break;
             case OP_RES:
