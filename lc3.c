@@ -399,7 +399,7 @@ int main(int argc, const char* argv[]) {
             case OP_RES:
             case OP_RTI:
             default:
-                // deal with bad code or unused regs
+                abort();
                 break;
         }
     }
