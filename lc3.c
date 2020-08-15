@@ -299,7 +299,7 @@ int main(int argc, const char* argv[]) {
                     uint16_t DR = (instr >> 9) & 0x7;
                     uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
                     // offset is used as a pointer, not actual data address
-                    reg[DR] = mem_read(mem_read(reg[R_PC] = pc_offset));
+                    reg[DR] = mem_read(mem_read(reg[R_PC] + pc_offset));
                     update_flags(DR);
                 }
                 break;
