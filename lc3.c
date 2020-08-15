@@ -324,14 +324,14 @@ int main(int argc, const char* argv[]) {
                 /*  store  */ {
                     uint16_t SR = (instr >> 9) & 0x7;
                     uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
-                    mem_write(reg[R_PC] + pc_offset, SR);
+                    mem_write(reg[R_PC] + pc_offset, reg[SR]);
                 }
                 break;
             case OP_STI:
                 /*  store indirect  */ {
                     uint16_t SR = (instr >> 9) & 0x7;
                     uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
-                    mem_write(mem_read(reg[R_PC] + pc_offset), SR);
+                    mem_write(mem_read(reg[R_PC] + pc_offset), reg[SR]);
                 }
                 break;
             case OP_STR:
@@ -339,7 +339,7 @@ int main(int argc, const char* argv[]) {
                     uint16_t SR = (instr >> 9) & 0x7;
                     uint16_t BaseR = (instr >> 6) & 0x7;
                     uint16_t offset = sign_extend(instr & 0x3F, 6);
-                    mem_write(reg[BaseR] + offset, SR);                }
+                    mem_write(reg[BaseR] + offset, reg[SR]);                }
                 break;
             case OP_TRAP: 
                 /*  trap routines  */ {
