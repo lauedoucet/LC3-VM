@@ -21,8 +21,6 @@ enum {
     R_COUNT     // total registers = 10
 };
 
-uint16_t reg[R_COUNT];
-
 /*  opcodes  */
 enum {
     OP_BR = 0,  // branch
@@ -51,10 +49,26 @@ enum {
 };
 
 /*  memory mapped registers  */
+enum {
+    MR_KBSR = 0xFE00,       // keyboard status
+    MR_KBDR = 0xFE02,       // keyboard data
+};
+
 /*  trap codes  */
+enum {
+    TRAP_GETC = 0x20,       // get char
+    TRAP_OUT = 0x21,        // output char
+    TRAP_PUTS = 0x22,       // output word string
+    TRAP_IN = 0x23,         // get char + echo
+    TRAP_PUTSP = 0x24,      // output byte string
+    TRAP_HALT = 0x25,       // halt program
+};
 
 /*  memory storage  */
+uint16_t memory[UINT16_MAX];
+
 /*  register storage  */
+uint16_t reg[R_COUNT];
 
 /*  sign extension  */
 uint16_t sign_extend(uint16_t x, int bit_count) {
@@ -68,6 +82,11 @@ uint16_t sign_extend(uint16_t x, int bit_count) {
 }
 
 /*  swap  */
+uint16_t swap16(uint16_t x) {
+    // swaps the num from little to big endian
+    return (x << 8) | (x >> 8);
+}
+
 /*  update flags  */
 void update_flags(uint16_t r) {
     // updates the flags of R_COND according to register r
@@ -82,11 +101,82 @@ void update_flags(uint16_t r) {
 }
 
 /*  read image file  */
+void read_image_file(FILE* file) {
+    uint16_t origin;                // tells us where in memory to place image
+    fread(&origin, sizeof(origin), 1, file);
+    origin = swap16(origin);
+
+    uint16_t max_read = UINT16_MAX - origin;
+    uint16_t* p = memory + origin;
+    size_t read = fread(p, sizeof(uint16_t), max_read, file);
+
+    while (read-- > 0) {
+        *p = swap16(*p);
+        ++p;
+    }
+}
+
 /*  read image  */
+int read_image(const char* image_path) {
+    FILE* file = fopen(image_path, "rb");
+    if (!file) { return 0; };
+    read_image_file(file);
+    fclose(file);
+    return 1;
+}
+
 /*  check key  */
+uint16_t check_key()
+{
+    return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
+}
+
 /*  memory access  */
+void mem_write(uint16_t address, uint16_t value) {
+    memory[address] = value;
+}
+
+uint16_t mem_read(uint16_t address) {
+    // check if we have right address
+    if (address == MR_KBSR) {
+        if (check_key()) {
+            // resets MR_KBSR?
+            memory[MR_KBSR] = (1 << 15);
+            memory[MR_KBDR] = getchar();
+        } else {
+            memory[MR_KBSR] = 0;
+        }
+    }
+    return memory[address];
+}
+
 /*  input buffering  */
+DWORD fdwMode, fdwOldMode;
+
+void disable_input_buffering()
+{
+    hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    GetConsoleMode(hStdin, &fdwOldMode);        // save old mode
+    fdwMode = fdwOldMode 
+            ^ ENABLE_ECHO_INPUT                 // no input echo 
+            ^ ENABLE_LINE_INPUT;        // return when one or more characters are available
+                                     
+    SetConsoleMode(hStdin, fdwMode);            // set new mode 
+    FlushConsoleInputBuffer(hStdin);            // clear buffer
+}
+
+void restore_input_buffering()
+{
+    SetConsoleMode(hStdin, fdwOldMode);
+}
+
 /*  handle interrupt  */
+void handle_interrupt(int signal)
+{
+    restore_input_buffering();
+    printf("\n");
+    exit(-2);
+}
 
 /*  main loop  */
 int main(int argc, const char* argv[]) {
@@ -105,6 +195,8 @@ int main(int argc, const char* argv[]) {
     }
 
     /*  setup  */
+    signal(SIGINT, handle_interrupt);
+    disable_input_buffering();
 
     /*  set PC to default position 0x3000  */
     enum {  PC_START = 0x3000 };
@@ -251,7 +343,57 @@ int main(int argc, const char* argv[]) {
                 break;
             case OP_TRAP: 
                 /*  trap routines  */ {
-
+                    switch (instr & 0xFF) {
+                        case TRAP_GETC:
+                        {
+                            reg[R_R0] = (uint16_t) getchar();
+                        }
+                            break;
+                        case TRAP_OUT: {
+                            putc( (char) reg[R_R0], stdout);
+                            fflush(stdout);
+                        }
+                            break;
+                        case TRAP_PUTS: 
+                        {
+                            // where does this 'memory' come from?
+                            uint16_t* c = memory + reg[R_R0];
+                            while (*c) {
+                                putc((char) *c, stdout);
+                                ++c;
+                            }
+                            fflush(stdout);
+                        }
+                            break;
+                        case TRAP_IN:
+                        {
+                            printf("Enter a character: ");
+                            char c = getchar();
+                            putc(c, stdout);
+                            reg[R_R0] = (uint16_t) c;     
+                        }
+                            break;
+                        case TRAP_PUTSP:
+                        {
+                            uint16_t* c = memory + reg[R_R0];
+                            while(*c) {
+                                char c1 = (*c) & 0xFF;
+                                putc(c1, stdout);
+                                char c2 = (*c) >> 8;
+                                if (c2) putc(c2, stdout);
+                                ++c;
+                            }
+                            fflush(stdout);
+                        }
+                            break;
+                        case TRAP_HALT:
+                        {
+                            puts("Halt");
+                            fflush(stdout);
+                            running = 0;
+                        }
+                            break;
+                    }
                 }
                 break;
             case OP_RES:
@@ -263,4 +405,5 @@ int main(int argc, const char* argv[]) {
     }
 
     /*  shutdown  */
+    restore_input_buffering();
 }
